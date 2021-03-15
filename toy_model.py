@@ -36,7 +36,7 @@ def lambda_d(x, y, x_src, y_src, b_src, N_src):
 
 class toy_experiment():
 
-	def __init__(self, detector_xs = np.linspace(-5, 5, 11), num_sen = 121, t_std = 1, noise_lookback=50, noise_lookahead=500, noise_rate=3000):
+	def __init__(self, detector_xs = np.linspace(-5, 5, 11), num_sen = 121, t_std = 1, noise_lookback=50, noise_lookahead=50, noise_rate=3000):
 		self.detector_xs = detector_xs
 		self.t_std = t_std
 		self.num_sen = int(len(self.detector_xs)**2)
@@ -100,12 +100,14 @@ class toy_experiment():
 				pulse_time = np.min(pulse_times)
 				ts.append(pulse_time)
 		t_min = np.min(ts)
+		ts -= t_min
+		ts = list(ts)
 		t_max = np.max(ts)
-		noise_begin = t_min - self.noise_lookback
+		noise_begin = -self.noise_lookback
 		noise_end = t_max + self.noise_lookahead
 		noise_window_width = noise_end - noise_begin
 		#dark_count = self.noise_rate*noise_window_width*self.num_sen*1e-9
-		noise_hits = stats.poisson(mu=5).rvs()
+		noise_hits = stats.poisson(mu=50).rvs()
 		for j in range(noise_hits):
 			noise_sen = int(stats.uniform.rvs()*self.num_sen)
 			noise_sen_x = self.detector_xs[noise_sen//self.num_row]
@@ -128,9 +130,12 @@ class toy_experiment():
 				Ns_sensor_idx.append(noise_sen)
 				Ns.append(noise_charge)
 				ts.append(noise_time)
-		N = np.array([Ns, ts, Ns_sensor_x, Ns_sensor_y, Ns_sensor_idx, Ns_sensor_f]).T
+		N = np.array([Ns, ts, Ns_sensor_x, Ns_sensor_y, Ns_sensor_f]).T
+		N = N.astype(np.float32)
 		np.random.shuffle(N)
-		return N
+		event = N[:,:-1]
+		labels = N[:,-1]
+		return event, labels
 		#return np.array([Ns, Ns_sensor_x, Ns_sensor_y, Ns_sensor_idx, Ns_sensor_f]).T
 
 
@@ -157,11 +162,16 @@ class toy_experiment():
 		truth = np.vstack([x, y, b, N]).T
 
 		events = []
+		labels = []
 
 		for i in range(N_events):
-			events.append(self.generate_event(x[i], y[i], b=b[i], N_src=N[i]))
+			event, label = self.generate_event(x[i], y[i], b=b[i], N_src=N[i])
+			events.append(event)
+			labels.append(label)
+			if (i+1)%100 == 0:
+				print(i+1)
 
-		return np.array(events), truth
+		return np.array(events, dtype=object), np.array(labels, dtype=object), truth
 
 	def plot_event(self, event):
 		'''
@@ -228,17 +238,29 @@ class toy_experiment():
 		ax.legend()
 		plt.show()
 
-def pad(events):
+def pad_events(events):
 	'''
 	Zero pads each event so that all events have the same dimensions.
 	'''
 	n_events = len(events)
 	n_max = max([event.shape[0] for event in events])
-	padded = np.zeros((n_events, n_max, 6))
+	padded = np.zeros((n_events, n_max, events[0].shape[1]))
 	for i in range(n_events):
 		slc = (i,) + tuple(slice(shp) for shp in events[i].shape)
 		padded[slc] = events[i]
-	return padded
+	return padded.astype(np.float32)
+
+def pad_labels(labels):
+	'''
+	Zero pads each label so that all labels have the same length.
+	'''
+	n_labels = len(labels)
+	n_max = max([label.shape[0] for label in labels])
+	padded = np.zeros((n_labels, n_max))
+	for i in range(n_labels):
+		slc = (i,) + tuple(slice(shp) for shp in labels[i].shape)
+		padded[slc] = labels[i]
+	return padded.astype(np.float32)
 
 def normalize(events):
 	'''
@@ -246,13 +268,11 @@ def normalize(events):
 	'''
 	means = []
 	stds = []
-	for i in range(events[0].shape[1] - 1):
+	for i in range(events[0].shape[1]):
 		all = [e[:,i] for e in events]
 		mean = np.mean(list(itertools.chain(*all)))
 		means.append(mean)
 		std = np.std(list(itertools.chain(*all)))
 		stds.append(std)
-	means.append(0)
-	stds.append(1)
 	norm_events = [(e - means)/stds for e in events]
-	return np.array(norm_events)
+	return np.array(norm_events, dtype=object)
