@@ -36,7 +36,7 @@ def lambda_d(x, y, x_src, y_src, b_src, N_src):
 
 class toy_experiment():
 
-	def __init__(self, detector_xs = np.linspace(-5, 5, 11), num_sen = 121, t_std = 1, noise_lookback=50, noise_lookahead=500, noise_rate=3000):
+	def __init__(self, detector_xs = np.linspace(-5, 5, 11), num_sen = 121, t_std = 1, noise_lookback=50, noise_lookahead=50, noise_rate=3000):
 		self.detector_xs = detector_xs
 		self.t_std = t_std
 		self.num_sen = int(len(self.detector_xs)**2)
@@ -100,12 +100,14 @@ class toy_experiment():
 				pulse_time = np.min(pulse_times)
 				ts.append(pulse_time)
 		t_min = np.min(ts)
+		ts -= t_min
+		ts = list(ts)
 		t_max = np.max(ts)
-		noise_begin = t_min - self.noise_lookback
+		noise_begin = -self.noise_lookback
 		noise_end = t_max + self.noise_lookahead
 		noise_window_width = noise_end - noise_begin
 		#dark_count = self.noise_rate*noise_window_width*self.num_sen*1e-9
-		noise_hits = stats.poisson(mu=5).rvs()
+		noise_hits = stats.poisson(mu=200).rvs()
 		for j in range(noise_hits):
 			noise_sen = int(stats.uniform.rvs()*self.num_sen)
 			noise_sen_x = self.detector_xs[noise_sen//self.num_row]
@@ -128,9 +130,12 @@ class toy_experiment():
 				Ns_sensor_idx.append(noise_sen)
 				Ns.append(noise_charge)
 				ts.append(noise_time)
-		N = np.array([Ns, ts, Ns_sensor_x, Ns_sensor_y, Ns_sensor_idx, Ns_sensor_f]).T
+		N = np.array([Ns, ts, Ns_sensor_x, Ns_sensor_y, Ns_sensor_f]).T
+		N = N.astype(np.float32)
 		np.random.shuffle(N)
-		return N
+		event = N[:,:-1]
+		labels = N[:,-1]
+		return event, labels
 		#return np.array([Ns, Ns_sensor_x, Ns_sensor_y, Ns_sensor_idx, Ns_sensor_f]).T
 
 
@@ -157,11 +162,16 @@ class toy_experiment():
 		truth = np.vstack([x, y, b, N]).T
 
 		events = []
+		labels = []
 
 		for i in range(N_events):
-			events.append(self.generate_event(x[i], y[i], b=b[i], N_src=N[i]))
+			event, label = self.generate_event(x[i], y[i], b=b[i], N_src=N[i])
+			events.append(event)
+			labels.append(label)
+			if (i+1)%100 == 0:
+				print(i+1)
 
-		return np.array(events), truth
+		return np.array(events, dtype=object), np.array(labels, dtype=object), truth
 
 	def plot_event(self, event):
 		'''
@@ -182,7 +192,7 @@ class toy_experiment():
 		labels = [min + window*x for x in np.linspace(0,1,6)]
 		labels = [f'{i:.2f}' for i in labels]
 		cmap = cm.get_cmap('jet')
-		colors = [cmap((k - min)/max) for k in ts]
+		colors = [cmap((k - min)/(max - min)) for k in ts]
 		fig = plt.figure()
 		ax = plt.axes(projection='3d')
 		cbar = fig.colorbar(plt.cm.ScalarMappable(cmap='jet'), ax=ax)
@@ -196,12 +206,11 @@ class toy_experiment():
 		ax.set_zlabel('# of photons')
 		plt.show()
 
-	def plot_noise(self, event):
+	def plot_noise(self, event, label):
 		'''
 		Plot 2D array of sensors with indicators for noise. Color indicates hit time.
 		'''
 		N = event
-		N = N[N[:,3].argsort()]
 		times = N[:,1]
 		min = np.min(times)
 		max = np.max(times)
@@ -210,12 +219,12 @@ class toy_experiment():
 		labels = [f'{i:.2f}' for i in labels]
 		x = N[:,2]
 		y = N[:,3]
-		noise = N[N[:,5] > 0]
-		noise_x = noise[:,2]
-		noise_y = noise[:,3]
+		noise = np.argwhere(label)
+		noise_x = N[noise,2]
+		noise_y = N[noise,3]
 		cmap = cm.get_cmap('jet')
 		fig, ax = plt.subplots()
-		colors = [cmap((k - min)/max) for k in times]
+		colors = [cmap((k - min)/(max - min)) for k in times]
 		cbar = fig.colorbar(plt.cm.ScalarMappable(cmap='jet'), ax=ax)
 		cbar.ax.set_yticklabels(labels)
 		cbar.set_label('Hit Time [ns]', rotation=270)
@@ -228,17 +237,100 @@ class toy_experiment():
 		ax.legend()
 		plt.show()
 
-def pad(events):
+	def plot_times(self, event, label, pred_label):
+		'''
+		Plots hit times and noise times on a 1D plot
+		'''
+		sig_idx = np.nonzero((pred_label<0.5) & (label<0.5))
+		sig = event[0,sig_idx,1].ravel()
+		noise_idx = np.nonzero((pred_label>0.5) & (label>0.5))
+		noise = event[0,noise_idx,1].ravel()
+		bad_sig_idx = np.nonzero((pred_label>0.5) & (label<0.5))
+		bad_sig = event[0,bad_sig_idx,1].ravel()
+		bad_noise_idx = np.nonzero((pred_label<0.5) & (label>0.5))
+		bad_noise = event[0,bad_noise_idx,1].ravel()
+		plt.hlines(1, np.min(event[0,:,1])-1, np.max(event[0,:,1])+1)
+		plt.eventplot(sig, colors='b', label=f'signal tagged correctly: {len(sig)}', linewidths=0.5)
+		plt.eventplot(noise, colors='r', label=f'noise tagged correctly: {len(noise)}', linewidths=0.5)
+		plt.eventplot(bad_sig, colors='g', label=f'signal tagged incorrectly: {len(bad_sig)}', linewidths=0.5)
+		plt.eventplot(bad_noise, colors='c', label=f'noise tagged incorrectly: {len(bad_noise)}', linewidths=0.5)
+		plt.xlabel('ns')
+		plt.title('Hit Times')
+		plt.legend(loc='best')
+		plt.show()
+
+	def plot_energies(self, event, label, pred_label):
+		'''
+		Plots hit energies and noise energies on a 1D plot
+		'''
+		sig_idx = np.nonzero((pred_label<0.5) & (label<0.5))
+		sig = event[0,sig_idx,0].ravel()
+		noise_idx = np.nonzero((pred_label>0.5) & (label>0.5))
+		noise = event[0,noise_idx,0].ravel()
+		bad_sig_idx = np.nonzero((pred_label>0.5) & (label<0.5))
+		bad_sig = event[0,bad_sig_idx,0].ravel()
+		bad_noise_idx = np.nonzero((pred_label<0.5) & (label>0.5))
+		bad_noise = event[0,bad_noise_idx,0].ravel()
+		plt.hlines(1, np.min(event[0,:,0]), np.max(event[0,:,0]))
+		plt.eventplot(sig, colors='b', label=f'signal identified correctly: {len(sig)}', linewidths=0.5)
+		plt.eventplot(noise, colors='r', label=f'noise identified correctly: {len(noise)}', linewidths=0.5)
+		plt.eventplot(bad_sig, colors='g', label=f'signal identified incorrectly: {len(bad_sig)}', linewidths=0.5)
+		plt.eventplot(bad_noise, colors='c', label=f'noise identified inccorectly: {len(bad_noise)}', linewidths=0.5)
+		plt.xlabel('Energy [arb]')
+		plt.title('Energies of Hits')
+		plt.legend(loc='best')
+		plt.show()
+
+	def plot_q_vs_t(self, event, label, pred_label):
+		'''
+		Plots hit energy vs hit time
+		'''
+		sig_idx = np.nonzero((pred_label<0.5) & (label<0.5))
+		sig_t = event[0, sig_idx, 1].ravel()
+		sig_q = event[0, sig_idx, 0].ravel()
+		noise_idx = np.nonzero((pred_label>0.5) & (label>0.5))
+		noise_t = event[0, noise_idx, 1].ravel()
+		noise_q = event[0, noise_idx, 0].ravel()
+		bad_noise_idx = np.nonzero((pred_label<0.5) & (label>0.5))
+		bad_noise_t = event[0, bad_noise_idx, 1].ravel()
+		bad_noise_q = event[0, bad_noise_idx, 0].ravel()
+		bad_sig_idx = np.nonzero((pred_label>0.5) & (label<0.5))
+		bad_sig_t = event[0, bad_sig_idx, 1].ravel()
+		bad_sig_q = event[0, bad_sig_idx, 0].ravel()
+
+		plt.scatter(sig_t, sig_q, s=2, c='b', label=f'signal tagged correctly: {len(sig_t)}')
+		plt.scatter(noise_t, noise_q, s=2, c='r', label=f'noise tagged correctly: {len(noise_t)}')
+		plt.scatter(bad_sig_t, bad_sig_q, s=2, c='g', label=f'signal tagged incorrectly: {len(bad_sig_t)}')
+		plt.scatter(bad_noise_t, bad_noise_q, s=2, c='c', label=f'noise tagged incorrectly: {len(bad_noise_t)}')
+		plt.title('Energy vs Hit Time')
+		plt.xlabel('Hit Time [ns]')
+		plt.ylabel('Energy [pe]')
+		plt.legend(loc='best')
+		plt.show()
+
+def pad_events(events):
 	'''
 	Zero pads each event so that all events have the same dimensions.
 	'''
 	n_events = len(events)
 	n_max = max([event.shape[0] for event in events])
-	padded = np.zeros((n_events, n_max, 6))
+	padded = np.zeros((n_events, n_max, events[0].shape[1]))
 	for i in range(n_events):
 		slc = (i,) + tuple(slice(shp) for shp in events[i].shape)
 		padded[slc] = events[i]
-	return padded
+	return padded.astype(np.float32)
+
+def pad_labels(labels):
+	'''
+	Zero pads each label so that all labels have the same length.
+	'''
+	n_labels = len(labels)
+	n_max = max([label.shape[0] for label in labels])
+	padded = np.zeros((n_labels, n_max))
+	for i in range(n_labels):
+		slc = (i,) + tuple(slice(shp) for shp in labels[i].shape)
+		padded[slc] = labels[i]
+	return padded.astype(np.float32)
 
 def normalize(events):
 	'''
@@ -246,13 +338,11 @@ def normalize(events):
 	'''
 	means = []
 	stds = []
-	for i in range(events[0].shape[1] - 1):
+	for i in range(events[0].shape[1]):
 		all = [e[:,i] for e in events]
 		mean = np.mean(list(itertools.chain(*all)))
 		means.append(mean)
 		std = np.std(list(itertools.chain(*all)))
 		stds.append(std)
-	means.append(0)
-	stds.append(1)
 	norm_events = [(e - means)/stds for e in events]
-	return np.array(norm_events)
+	return np.array(norm_events, dtype=object)
