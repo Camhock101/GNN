@@ -2,6 +2,7 @@ import numpy as np
 import itertools
 import sys
 import traceback
+import pickle
 
 try:
 	import tensorflow.keras as keras
@@ -11,7 +12,7 @@ except ImportError:
 from caloGraphNN_keras import *
 from spektral.layers.convolutional import edge_conv
 
-def open_file(name=None):
+def open_npz_file(name=None):
 	'''
 	Opens all 16 npz files and concatenates them
 	'''
@@ -34,6 +35,26 @@ def open_file(name=None):
 	pad_labels = np.array(list(itertools.chain(*pad_labels)))
 	return events, labels, norm_events, pad_events, pad_labels
 
+def open_pkl_file():
+	'''
+	Opens all 16 pkl files, normalizes the event features,
+	and concatenates them to be fed to the GNN.
+	'''
+
+	events = []
+	labels = []
+	for i in range(1, 17):
+		file = open(f'{i}.pkl', 'rb')
+		data = pickle.load(file)
+		file.close()
+		for j in range(len(data)):
+			hit_info = data[j]['hits']
+			labels.append(hit_info[:,-1])
+			events.append(hit_info[:, :5])
+	means = np.mean(list(itertools.chain(*events)), axis=0)
+	stds = np.std(list(itertools.chain(*events)), axis=0)
+	norm_events = [(e - means)/stds for e in events]
+	return norm_events, labels
 class GravNetModel(keras.Model):
 	'''
 	Keras Model with GravNet layer
@@ -94,7 +115,7 @@ class EdgeConvModel(keras.Model):
 
 	def add_layer(self, cls, *args, **kwargs):
 		layer = cls(*args, **kwargs)
-		self._layers.append(layer)
+		self.layers.append(layer)
 		return layer
 
 
