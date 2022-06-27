@@ -49,14 +49,15 @@ class GlobalExchange(keras.layers.Layer):
 
     def build(self, input_shape):
         # tf.ragged FIXME?
-        self.num_vertices = input_shape[1]
+       # self.num_vertices = input_shape[1]
         super(GlobalExchange, self).build(input_shape)
 
     def call(self, x):
         mean = K.mean(x, axis=1, keepdims=True)
         # tf.ragged FIXME?
         # maybe just use tf.shape(x)[1] instead?
-        mean = K.tile(mean, [1, self.num_vertices, 1])
+        #mean = K.tile(mean, [1, self.num_vertices, 1])
+        mean = K.tile(mean, [1, x.shape[1], 1])
         if self.vertex_mask is not None:
             mean = self.vertex_mask * mean
 
@@ -276,7 +277,7 @@ class GarNet(keras.layers.Layer):
         if self._simplified:
             self._output_feature_transform.build(data_shape[:2] + (self._aggregator_distance.units * self._input_feature_transform.units,))
         else:
-            self._output_feature_transform.build(data_shape[:2] + (data_shape[2] + self._aggregator_distance.units * self._input_feature_transform.units + self._aggregator_distance.units,))
+            self._output_feature_transform.build(data_shape[:2] + (data_shape[2] + (self._aggregator_distance.units * (2 * (self._input_feature_transform.units + self._aggregator_distance.units) + 1)),))
 
     def call(self, x):
         data, num_vertex, vertex_mask = self._unpack_input(x)
@@ -294,8 +295,10 @@ class GarNet(keras.layers.Layer):
         if self._input_format == 'x':
             data = x
 
-            vertex_mask = K.cast(K.not_equal(data[..., 3:4], 0.), 'float32')
-            num_vertex = K.sum(vertex_mask)
+#            vertex_mask = K.cast(K.not_equal(data[..., 3:4], 0.), 'float32')
+            vertex_mask = K.cast(K.not_equal(data[..., 0:1], 0.), 'float32')
+#            num_vertex = K.sum(vertex_mask)
+            num_vertex = K.sum(vertex_mask, axis = 1)
 
         elif self._input_format in ['xn', 'xen']:
             if self._input_format == 'xn':
@@ -322,13 +325,19 @@ class GarNet(keras.layers.Layer):
         if not self._simplified:
             features = K.concatenate([vertex_mask * features, edge_weights], axis=-1)
         
+#        if self._mean_by_nvert:
+#            def graph_mean(out, axis):
+#                s = K.sum(out, axis=axis)
+#                # reshape just to enable broadcasting
+#                s = K.reshape(s, (-1, d_compute.units * in_transform.units)) / num_vertex
+#                s = K.reshape(s, (-1, d_compute.units, in_transform.units))
+#                return s
         if self._mean_by_nvert:
             def graph_mean(out, axis):
                 s = K.sum(out, axis=axis)
-                # reshape just to enable broadcasting
-                s = K.reshape(s, (-1, d_compute.units * in_transform.units)) / num_vertex
-                s = K.reshape(s, (-1, d_compute.units, in_transform.units))
-                return s
+                s = K.permute_dimensions(s, (1, 0, 2))
+                s = s/num_vertex
+                s = K.permute_dimensions(s, (1, 0, 2))
         else:
             graph_mean = K.mean
 
