@@ -6,7 +6,7 @@ model = GarNetModel()
 optimizer = keras.optimizers.Adam(0.0001)
 model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 
-norm_events, labels = open_pkl_file(name='train')
+norm_events, labels = open_npz_file(name='train')
 padded_events = pad_events(norm_events)
 padded_labels = pad_labels(labels)
 #frac_noise = [label.sum()/len(label) for label in padded_labels]
