@@ -33,7 +33,7 @@ def open_npz_file():
     norm_events = np.array(list(itertools.chain(*norm_events)))
     pad_events = np.array(list(itertools.chain(*pad_events)))
     pad_labels = np.array(list(itertools.chain(*pad_labels)))
-    return events, labels, norm_events, pad_events, pad_labels
+    return norm_events, labels
 
 def open_pkl_file(name=None):
     '''
