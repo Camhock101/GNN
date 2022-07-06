@@ -12,7 +12,7 @@ except ImportError:
 from caloGraphNN_keras import *
 from spektral.layers.convolutional import edge_conv
 
-def open_npz_file(name=None):
+def open_npz_file():
     '''
     Opens all 16 npz files and concatenates them
     '''
@@ -22,7 +22,7 @@ def open_npz_file(name=None):
     pad_events = []
     pad_labels = []
     for i in range(1, 17):
-        data = np.load(f'{i}_{name}.npz', allow_pickle=True)
+        data = np.load(f'{i}.npz', allow_pickle=True)
         events.append(data['events'])
         labels.append(data['labels'])
         norm_events.append(data['norm_events'])
