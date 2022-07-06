@@ -12,7 +12,7 @@ except ImportError:
 from caloGraphNN_keras import *
 from spektral.layers.convolutional import edge_conv
 
-def open_npz_file():
+def open_npz_file(name=""):
     '''
     Opens all 16 npz files and concatenates them
     '''
