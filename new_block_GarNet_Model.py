@@ -22,7 +22,7 @@ val_labels = padded_labels[:split]
 
 hist = model.fit(x=train_events, y=train_labels, verbose=2, epochs=50, validation_data=(val_events, val_labels), shuffle=False, use_multiprocessing=True, workers=12, max_queue_size=16)
 
-test_norm_events, test_labels = open_pkl_file(name='test')
+test_norm_events, test_labels = open_npz_file(name='_test')
 test_padded_events = pad_events(test_norm_events)
 test_padded_labels = pad_labels(test_labels)
 frac_noise = [label.sum()/len(label) for label in test_padded_labels]
